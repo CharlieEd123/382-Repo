@@ -1,134 +1,119 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+
 /// <summary>
-/// LAB 3 - GOAL 2 & GOAL 3
-///
-/// You don't need to know C# to finish this script. Read the plain-language
-/// comments above each section, then fill in the ONE blank near the bottom
-/// marked "TODO" - that's the only line you need to write yourself.
-///
-/// What this script does, in order, every time the game runs:
-/// 1. Find the "Move" action inside PlayerControls.inputactions.
-/// 2. Turn that action on so it starts listening for WASD / left stick.
-/// 3. Every single frame, ask it "what's the current input?" and store
-/// the answer.
-/// 4. Hand that answer to the Animator so your 2D Freeform Directional
-/// blend tree (Goal 3) knows which way to blend.
-///
-/// Setup reminder: this script goes on your character, alongside its
-/// Animator component, and you drag PlayerControls.inputactions into the
-/// "Input Actions" slot in the Inspector.
+/// Simple walk + run controller.
+/// WASD / arrow keys (or gamepad left stick) to move, hold Left Shift
+/// (or click the left stick) to run. The character turns to face the
+/// direction it moves and feeds the Animator blend tree.
 /// </summary>
 [RequireComponent(typeof(Animator))]
-public class PlayerMovementInput : MonoBehaviour
+[RequireComponent(typeof(CharacterController))]
+public class SimpleWalkRun : MonoBehaviour
 {
     [Header("Input")]
-    [Tooltip("Drag PlayerControls.inputactions here.")]
+    [Tooltip("Optional. Drag your .inputactions file here to also support the gamepad stick.")]
     [SerializeField] private InputActionAsset inputActions;
     [SerializeField] private string actionMapName = "Player";
     [SerializeField] private string moveActionName = "Move";
+
     [Header("Animator Parameters")]
-    // These two names must exactly match the float parameters you created
-    // inside the Animator (Goal 3). Capitalization matters in C# - "movex"
-    // and "MoveX" are treated as two different names.
     [SerializeField] private string moveXParam = "MoveX";
     [SerializeField] private string moveYParam = "MoveY";
-    [Header("Smoothing")]
-    // This one number IS a response curve, in the sense from this week's
-    // reading. A small number = fast Attack = tight, snappy blending.
-    // A bigger number = slow Attack = floatier, smoother blending.
-    // Try changing this value and see how differently the blend feels.
-    [SerializeField] private float dampTime = 0.1f;
 
     [Header("Movement")]
-[SerializeField] private float moveSpeed = 2f;
+    [Tooltip("ON: W moves away from the camera (use this with Cinemachine). OFF: W always moves toward world forward.")]
+    [SerializeField] private bool cameraRelative = true;
+    [SerializeField] private float walkSpeed = 3f;
+    [SerializeField] private float runSpeed = 6f;
+    [Tooltip("Degrees per second the character turns toward its movement direction.")]
+    [SerializeField] private float turnSpeed = 720f;
+    [Tooltip("Gravity so the character stays on the ground (negative number).")]
+    [SerializeField] private float gravity = -20f;
+
+    [Header("Animation")]
+    [Tooltip("How far out the blend tree is pushed when walking. Match your Walk clips' position (e.g. 0.5). Running uses 1.")]
+    [SerializeField] private float walkBlendScale = 0.5f;
+    [Tooltip("Smoothing for the blend tree. Small = snappy, bigger = floaty.")]
+    [SerializeField] private float dampTime = 0.1f;
+
     private InputAction moveAction;
     private Animator animator;
-    /// <summary>
-    /// The current input direction, updated every frame. You won't need to
-    /// touch this yourself today, but this is what a future movement script
-    /// would read to actually move the character (not just animate it).
-    /// </summary>
-    public Vector2 MoveInput { get; private set; }
-    // ------------------------------------------------------------------
-    // Awake() runs ONCE, right when the game starts - before anything else.
-    // This block looks inside the Input Actions asset you dragged in, finds
-    // the "Player" map, and finds the "Move" action inside it. Think of it
-    // as Unity double-checking everything is wired up correctly and giving
-    // you a clear error message in the Console if it isn't.
-    // You don't need to write anything in this block.
-    // ------------------------------------------------------------------
+    private CharacterController controller;
+    private float verticalVelocity;
+
     private void Awake()
     {
         animator = GetComponent<Animator>();
-        if (inputActions == null)
+        controller = GetComponent<CharacterController>();
+
+        if (inputActions != null)
         {
-            Debug.LogError($"{name}: No InputActionAsset assigned to PlayerMovementInput. " + "Drag PlayerControls.inputactions into the Input Actions field.");
-            return;
-        }
-        var map = inputActions.FindActionMap(actionMapName, throwIfNotFound:
-        false);
-        if (map == null)
-        {
-            Debug.LogError($"{name}: Action map \"{actionMapName}\" not found in {inputActions.name}.");
-            return;
-        }
-        moveAction = map.FindAction(moveActionName, throwIfNotFound: false);
-        if (moveAction == null)
-        {
-            Debug.LogError($"{name}: Action \"{moveActionName}\" not found in map \"{actionMapName}\".");
+            var map = inputActions.FindActionMap(actionMapName, throwIfNotFound: false);
+            if (map != null)
+                moveAction = map.FindAction(moveActionName, throwIfNotFound: false);
         }
     }
-    // ------------------------------------------------------------------
-    // OnEnable / OnDisable turn the action's "listening" on and off,
-    // matching whether this GameObject is active in the scene.
-    //
-    // This is the single most common thing people forget when using the
-    // Input System - if you skip this, moveAction never wakes up and
-    // your input will silently do nothing. It's the #1 pitfall from the
-    // deck ("Actions never fire") for a reason.
-    // You don't need to write anything in this block.
-    // ------------------------------------------------------------------
+
     private void OnEnable()
     {
         moveAction?.Enable();
     }
+
     private void OnDisable()
     {
         moveAction?.Disable();
     }
-    // ------------------------------------------------------------------
-    // Update() runs once per frame - potentially dozens or hundreds of
-    // times per second. This is where the "click" from the reading
-    // actually gets read and turned into something the game can use.
-    // ------------------------------------------------------------------
+
     private void Update()
     {
-        // Ask the Move action: "what's the current WASD / left-stick value
-        // right now?" It comes back as a Vector2: x is left/right, y is
-        // up/down. (0,0) means no input at all.
-        MoveInput = moveAction != null ? moveAction.ReadValue<Vector2>() :
-        Vector2.zero;
-        // ------------------------------------------------------------
-        // TODO (this is the one part you write):
-        // Feed MoveInput into the Animator so the blend tree from Goal 3
-        // can use it. You need TWO lines - one for MoveX, one for MoveY.
-        //
-        // The method you want is:
-        // animator.SetFloat(parameterName, value, dampTime, Time.deltaTime);
-        //
-        // Hints:
-        // - The parameter names are already stored for you above:
-        // moveXParam and moveYParam.
-        // - The values you want to send are MoveInput.x and MoveInput.y.
-        // - dampTime is already declared above too - just reuse it.
-        //
-        // Write your two lines below this comment:
-        // ------------------------------------------------------------
-        animator.SetFloat(moveXParam, MoveInput.x, dampTime, Time.deltaTime);
-        animator.SetFloat(moveYParam, MoveInput.y, dampTime, Time.deltaTime);
+        // Read input: keyboard (WASD + arrows), falling back to the gamepad stick
+        Vector2 input = moveAction != null ? moveAction.ReadValue<Vector2>() : Vector2.zero;
 
-        Vector3 move = new Vector3(MoveInput.x, 0f, MoveInput.y);
-transform.Translate(move * moveSpeed * Time.deltaTime, Space.World);
+        Keyboard kb = Keyboard.current;
+        if (kb != null)
+        {
+            Vector2 keys = Vector2.zero;
+            if (kb.dKey.isPressed || kb.rightArrowKey.isPressed) keys.x += 1f;
+            if (kb.aKey.isPressed || kb.leftArrowKey.isPressed)  keys.x -= 1f;
+            if (kb.wKey.isPressed || kb.upArrowKey.isPressed)    keys.y += 1f;
+            if (kb.sKey.isPressed || kb.downArrowKey.isPressed)  keys.y -= 1f;
+
+            if (keys != Vector2.zero) input = Vector2.ClampMagnitude(keys, 1f);
+        }
+
+        bool running = (kb != null && (kb.leftShiftKey.isPressed || kb.rightShiftKey.isPressed))
+                       || (Gamepad.current != null && Gamepad.current.leftStickButton.isPressed);
+
+        Vector3 direction = new Vector3(input.x, 0f, input.y);
+
+        // Camera-relative: W moves away from the camera, A/D move left/right of the camera view
+        if (cameraRelative && Camera.main != null)
+        {
+            Transform cam = Camera.main.transform;
+            Vector3 forward = Vector3.ProjectOnPlane(cam.forward, Vector3.up).normalized;
+            Vector3 right = Vector3.ProjectOnPlane(cam.right, Vector3.up).normalized;
+            direction = forward * input.y + right * input.x;
+        }
+
+        // Turn toward the movement direction
+        if (direction.sqrMagnitude > 0.01f)
+        {
+            Quaternion target = Quaternion.LookRotation(direction.normalized, Vector3.up);
+            transform.rotation = Quaternion.RotateTowards(transform.rotation, target, turnSpeed * Time.deltaTime);
+        }
+
+        // Feed the blend tree: walking = middle ring, running = outer ring
+        float amount = input.magnitude * (running ? 1f : walkBlendScale);
+        animator.SetFloat(moveXParam, 0f, dampTime, Time.deltaTime);
+        animator.SetFloat(moveYParam, amount, dampTime, Time.deltaTime);
+
+        // Move (with gravity so the character stays on the ground)
+        if (controller.isGrounded && verticalVelocity < 0f) verticalVelocity = -2f;
+        verticalVelocity += gravity * Time.deltaTime;
+
+        float speed = running ? runSpeed : walkSpeed;
+        Vector3 motion = direction * speed + Vector3.up * verticalVelocity;
+        controller.Move(motion * Time.deltaTime);
     }
 }
